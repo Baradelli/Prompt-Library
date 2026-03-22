@@ -168,6 +168,30 @@ button[type="submit"]:hover {
   -webkit-box-orient: vertical;
 }
 
+/* Stars */
+
+.stars {
+  display: flex;
+  gap: 0.15rem;
+}
+
+.star {
+  color: var(--border);
+  cursor: pointer;
+  font-size: 1.1rem;
+  transition: color 0.15s, transform 0.1s;
+  user-select: none;
+}
+
+.star.filled,
+.star.hover {
+  color: #f5c518;
+}
+
+.star:hover {
+  transform: scale(1.2);
+}
+
 .card-footer {
   display: flex;
   justify-content: flex-end;
