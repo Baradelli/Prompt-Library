@@ -373,3 +373,71 @@ details[open] .notes-toggle::before {
   height: 5rem;
   overflow: auto;
 }
+
+/* Metadata */
+
+.card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.meta-model {
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.meta-model::before {
+  content: '◈';
+  font-size: 0.65rem;
+  flex-shrink: 0;
+}
+
+.meta-timestamps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.meta-time {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.token-badge {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  padding: 0.1rem 0.45rem;
+  border-radius: 20px;
+  border: 1px solid;
+  font-size: 0.68rem;
+}
+
+.confidence-high {
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.25);
+  background: rgba(74, 222, 128, 0.06);
+}
+
+.confidence-medium {
+  color: #f5c518;
+  border-color: rgba(245, 197, 24, 0.25);
+  background: rgba(245, 197, 24, 0.06);
+}
+
+.confidence-low {
+  color: var(--danger);
+  border-color: rgba(224, 92, 110, 0.25);
+  background: rgba(224, 92, 110, 0.06);
+}

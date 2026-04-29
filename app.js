@@ -3,10 +3,62 @@ const NOTES_KEY = 'prompt-notes';
 
 const form = document.getElementById('prompt-form');
 const titleInput = document.getElementById('title');
+const modelInput = document.getElementById('model');
 const contentInput = document.getElementById('content');
 const grid = document.getElementById('prompt-grid');
 const emptyState = document.getElementById('empty-state');
 const countBadge = document.getElementById('count');
+
+// ── Metadata ──────────────────────────────────────────────────────────────────
+
+function estimateTokens(text, isCode) {
+  if (typeof text !== 'string') throw new Error('estimateTokens: text must be a string');
+  const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
+  const charCount = text.length;
+  let min = Math.round(0.75 * wordCount);
+  let max = Math.round(0.25 * charCount);
+  if (isCode) {
+    min = Math.round(min * 1.3);
+    max = Math.round(max * 1.3);
+  }
+  const confidence = max < 1000 ? 'high' : max <= 5000 ? 'medium' : 'low';
+  return { min, max, confidence };
+}
+
+function trackModel(modelName, content) {
+  if (typeof modelName !== 'string' || modelName.trim().length === 0) {
+    throw new Error('trackModel: modelName must be a non-empty string');
+  }
+  if (modelName.trim().length > 100) {
+    throw new Error('trackModel: modelName must be 100 characters or fewer');
+  }
+  const now = new Date().toISOString();
+  const tokenEstimate = estimateTokens(content, false);
+  return { model: modelName.trim(), createdAt: now, updatedAt: now, tokenEstimate };
+}
+
+function updateTimestamps(metadata) {
+  if (!metadata || typeof metadata !== 'object') {
+    throw new Error('updateTimestamps: metadata must be an object');
+  }
+  if (!metadata.createdAt || isNaN(Date.parse(metadata.createdAt))) {
+    throw new Error('updateTimestamps: createdAt must be a valid ISO 8601 string');
+  }
+  const now = new Date().toISOString();
+  if (now < metadata.createdAt) {
+    throw new Error('updateTimestamps: updatedAt cannot be before createdAt');
+  }
+  return { ...metadata, updatedAt: now };
+}
+
+function formatDate(isoString) {
+  return new Date(isoString).toLocaleString(undefined, {
+    month: 'short', day: 'numeric', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 function loadPrompts() {
   return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
@@ -18,6 +70,11 @@ function savePrompts(prompts) {
 
 function renderPrompts() {
   const prompts = loadPrompts();
+  prompts.sort((a, b) => {
+    const aTime = a.metadata ? new Date(a.metadata.createdAt).getTime() : a.id;
+    const bTime = b.metadata ? new Date(b.metadata.createdAt).getTime() : b.id;
+    return bTime - aTime;
+  });
   grid.innerHTML = '';
 
   countBadge.textContent = prompts.length;
@@ -27,9 +84,20 @@ function renderPrompts() {
     const card = document.createElement('div');
     card.className = 'card';
     const promptNotes = loadNotes()[prompt.id] || [];
+    const meta = prompt.metadata;
+    const metaHtml = meta ? `
+      <div class="card-meta">
+        <span class="meta-model">${escapeHtml(meta.model)}</span>
+        <div class="meta-timestamps">
+          <span class="meta-time">Created ${formatDate(meta.createdAt)}</span>
+          ${meta.updatedAt !== meta.createdAt ? `<span class="meta-time">Updated ${formatDate(meta.updatedAt)}</span>` : ''}
+        </div>
+        <span class="token-badge confidence-${meta.tokenEstimate.confidence}">~${meta.tokenEstimate.min}&ndash;${meta.tokenEstimate.max} tokens</span>
+      </div>` : '';
     card.innerHTML = `
       <div class="card-title">${escapeHtml(prompt.title)}</div>
       <div class="card-preview">${escapeHtml(prompt.content)}</div>
+      ${metaHtml}
       <div class="stars" data-id="${prompt.id}">${renderStars(prompt.id, prompt.rating || 0)}</div>
       <details class="notes-panel" data-prompt-id="${prompt.id}">
         <summary class="notes-toggle">Notes <span class="note-count">${promptNotes.length || ''}</span></summary>
@@ -58,6 +126,13 @@ function setRating(promptId, value) {
   const prompt = prompts.find((p) => p.id === promptId);
   if (!prompt) return;
   prompt.rating = prompt.rating === value ? 0 : value;
+  if (prompt.metadata) {
+    try {
+      prompt.metadata = updateTimestamps(prompt.metadata);
+    } catch (err) {
+      console.error('Timestamp update error:', err.message);
+    }
+  }
   savePrompts(prompts);
   renderPrompts();
 }
@@ -110,15 +185,24 @@ function escapeHtml(str) {
 form.addEventListener('submit', (e) => {
   e.preventDefault();
   const title = titleInput.value.trim();
+  const model = modelInput.value.trim();
   const content = contentInput.value.trim();
-  if (!title || !content) return;
+  if (!title || !model || !content) return;
+
+  let metadata = null;
+  try {
+    metadata = trackModel(model, content);
+  } catch (err) {
+    console.error('Metadata error:', err.message);
+  }
 
   const prompts = loadPrompts();
-  prompts.unshift({ id: Date.now(), title, content, rating: 0 });
+  prompts.unshift({ id: Date.now(), title, content, rating: 0, metadata });
   savePrompts(prompts);
   renderPrompts();
 
   titleInput.value = '';
+  modelInput.value = '';
   contentInput.value = '';
   titleInput.focus();
 });
