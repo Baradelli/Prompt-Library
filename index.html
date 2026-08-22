@@ -39,6 +39,39 @@
     </section>
   </main>
 
+  <div id="prompt-modal" class="modal" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1">
+      <header class="modal-header">
+        <div class="modal-heading">
+          <h3 id="modal-title"></h3>
+          <div id="modal-meta" class="modal-meta"></div>
+        </div>
+        <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      </header>
+
+      <div class="modal-body">
+        <section class="modal-section">
+          <div class="modal-section-head">
+            <span class="modal-section-label">Prompt</span>
+            <button type="button" id="copy-btn" class="copy-btn">Copy prompt</button>
+          </div>
+          <pre id="modal-content" class="modal-prompt" tabindex="0"></pre>
+        </section>
+
+        <section class="modal-section">
+          <div class="modal-section-head">
+            <span class="modal-section-label">Notes <span id="modal-note-count" class="note-count"></span></span>
+          </div>
+          <div class="notes-body">
+            <div id="modal-notes-list" class="notes-list"></div>
+            <textarea id="modal-note-input" class="note-input" placeholder="Add a note... (Enter to save)"></textarea>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>

@@ -8,6 +8,15 @@ const contentInput = document.getElementById('content');
 const grid = document.getElementById('prompt-grid');
 const emptyState = document.getElementById('empty-state');
 const countBadge = document.getElementById('count');
+const modal = document.getElementById('prompt-modal');
+const modalDialog = modal.querySelector('.modal-dialog');
+const modalTitle = document.getElementById('modal-title');
+const modalMeta = document.getElementById('modal-meta');
+const modalContent = document.getElementById('modal-content');
+const modalNotesList = document.getElementById('modal-notes-list');
+const modalNoteInput = document.getElementById('modal-note-input');
+const modalNoteCount = document.getElementById('modal-note-count');
+const copyBtn = document.getElementById('copy-btn');
 
 // ── Metadata ──────────────────────────────────────────────────────────────────
 
@@ -83,6 +92,8 @@ function renderPrompts() {
   prompts.forEach((prompt) => {
     const card = document.createElement('div');
     card.className = 'card';
+    card.dataset.id = prompt.id;
+    card.tabIndex = 0;
     const promptNotes = loadNotes()[prompt.id] || [];
     const meta = prompt.metadata;
     const metaHtml = meta ? `
@@ -100,7 +111,7 @@ function renderPrompts() {
       ${metaHtml}
       <div class="stars" data-id="${prompt.id}">${renderStars(prompt.id, prompt.rating || 0)}</div>
       <details class="notes-panel" data-prompt-id="${prompt.id}">
-        <summary class="notes-toggle">Notes <span class="note-count">${promptNotes.length || ''}</span></summary>
+        <summary class="notes-toggle">Notes <span class="note-count" data-notes-count="${prompt.id}">${promptNotes.length || ''}</span></summary>
         <div class="notes-body">
           <div class="notes-list" data-prompt-id="${prompt.id}">${renderNoteItems(promptNotes, prompt.id)}</div>
           <textarea class="note-input" data-prompt-id="${prompt.id}" placeholder="Add a note... (Enter to save)"></textarea>
@@ -166,12 +177,13 @@ function renderNoteItems(notes, promptId) {
 }
 
 function updateNotesPanel(promptId) {
-  const notesListEl = grid.querySelector(`.notes-list[data-prompt-id="${promptId}"]`);
-  const countEl = grid.querySelector(`.notes-panel[data-prompt-id="${promptId}"] .note-count`);
-  if (!notesListEl) return;
   const notes = loadNotes()[promptId] || [];
-  notesListEl.innerHTML = renderNoteItems(notes, promptId);
-  if (countEl) countEl.textContent = notes.length || '';
+  document.querySelectorAll(`.notes-list[data-prompt-id="${promptId}"]`).forEach((list) => {
+    list.innerHTML = renderNoteItems(notes, promptId);
+  });
+  document.querySelectorAll(`[data-notes-count="${promptId}"]`).forEach((badge) => {
+    badge.textContent = notes.length || '';
+  });
 }
 
 function escapeHtml(str) {
@@ -207,13 +219,9 @@ form.addEventListener('submit', (e) => {
   titleInput.focus();
 });
 
-grid.addEventListener('click', (e) => {
-  const star = e.target.closest('.star');
-  if (star) {
-    setRating(Number(star.dataset.id), Number(star.dataset.value));
-    return;
-  }
+// ── Note interactions (shared by the grid cards and the modal) ────────────────
 
+function handleNotesClick(e) {
   const noteDeleteBtn = e.target.closest('.note-delete-btn');
   if (noteDeleteBtn) {
     const { noteId, promptId } = noteDeleteBtn.dataset;
@@ -221,7 +229,7 @@ grid.addEventListener('click', (e) => {
     notes[promptId] = (notes[promptId] || []).filter((n) => String(n.id) !== noteId);
     saveNotes(notes);
     updateNotesPanel(promptId);
-    return;
+    return true;
   }
 
   const noteText = e.target.closest('.note-text');
@@ -230,7 +238,7 @@ grid.addEventListener('click', (e) => {
     const { noteId, promptId } = item.dataset;
     const notes = loadNotes();
     const note = (notes[promptId] || []).find((n) => String(n.id) === noteId);
-    if (!note) return;
+    if (!note) return true;
     const textarea = document.createElement('textarea');
     textarea.className = 'note-edit-input';
     textarea.value = note.text;
@@ -238,35 +246,29 @@ grid.addEventListener('click', (e) => {
     textarea.dataset.promptId = promptId;
     item.replaceWith(textarea);
     textarea.focus();
-    return;
+    return true;
   }
 
-  const btn = e.target.closest('.delete-btn');
-  if (!btn) return;
+  return false;
+}
 
-  const id = Number(btn.dataset.id);
-  const prompts = loadPrompts().filter((p) => p.id !== id);
-  savePrompts(prompts);
-  renderPrompts();
-});
-
-grid.addEventListener('keydown', (e) => {
+function handleNotesKeydown(e) {
   const noteInput = e.target.closest('.note-input');
-  if (noteInput && e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    const text = noteInput.value.trim();
-    if (!text) return;
-    const promptId = noteInput.dataset.promptId;
-    const notes = loadNotes();
-    if (!notes[promptId]) notes[promptId] = [];
-    notes[promptId].push({ id: String(Date.now()), text, savedAt: Date.now() });
-    saveNotes(notes);
-    noteInput.value = '';
-    updateNotesPanel(promptId);
-  }
-});
+  if (!noteInput || e.key !== 'Enter' || e.shiftKey) return false;
+  e.preventDefault();
+  const text = noteInput.value.trim();
+  if (!text) return true;
+  const promptId = noteInput.dataset.promptId;
+  const notes = loadNotes();
+  if (!notes[promptId]) notes[promptId] = [];
+  notes[promptId].push({ id: String(Date.now()), text, savedAt: Date.now() });
+  saveNotes(notes);
+  noteInput.value = '';
+  updateNotesPanel(promptId);
+  return true;
+}
 
-grid.addEventListener('focusout', (e) => {
+function handleNotesFocusout(e) {
   const editInput = e.target.closest('.note-edit-input');
   if (!editInput) return;
   const { noteId, promptId } = editInput.dataset;
@@ -283,7 +285,159 @@ grid.addEventListener('focusout', (e) => {
     saveNotes(notes);
   }
   updateNotesPanel(promptId);
+}
+
+// ── Modal ─────────────────────────────────────────────────────────────────────
+
+const modalBody = modal.querySelector('.modal-body');
+
+let openPromptId = null;
+let lastFocused = null;
+let copyResetTimer = null;
+
+function openModal(promptId) {
+  const prompt = loadPrompts().find((p) => p.id === promptId);
+  if (!prompt) return;
+
+  openPromptId = promptId;
+  lastFocused = document.activeElement;
+
+  modalTitle.textContent = prompt.title;
+  // textContent, not innerHTML: the prompt is user text and must render verbatim
+  modalContent.textContent = prompt.content;
+
+  const meta = prompt.metadata;
+  modalMeta.innerHTML = meta ? `
+    <span class="meta-model">${escapeHtml(meta.model)}</span>
+    <span class="meta-time">Created ${formatDate(meta.createdAt)}</span>
+    ${meta.updatedAt !== meta.createdAt ? `<span class="meta-time">Updated ${formatDate(meta.updatedAt)}</span>` : ''}
+    <span class="token-badge confidence-${meta.tokenEstimate.confidence}">~${meta.tokenEstimate.min}&ndash;${meta.tokenEstimate.max} tokens</span>
+  ` : '';
+
+  modalNotesList.dataset.promptId = promptId;
+  modalNoteCount.dataset.notesCount = promptId;
+  modalNoteInput.dataset.promptId = promptId;
+  modalNoteInput.value = '';
+  updateNotesPanel(promptId);
+
+  resetCopyButton();
+  modal.hidden = false;
+  document.body.classList.add('modal-open');
+  // long prompts open at the top, never mid-scroll from the previously opened one
+  modalBody.scrollTop = 0;
+  modalContent.scrollTop = 0;
+  modalDialog.focus();
+}
+
+function closeModal() {
+  if (modal.hidden) return;
+  modal.hidden = true;
+  openPromptId = null;
+  document.body.classList.remove('modal-open');
+  if (lastFocused && document.contains(lastFocused)) lastFocused.focus();
+  lastFocused = null;
+}
+
+function resetCopyButton() {
+  clearTimeout(copyResetTimer);
+  copyBtn.textContent = 'Copy prompt';
+  copyBtn.classList.remove('copied', 'failed');
+}
+
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (err) {
+    // the clipboard API needs a secure context; fall back for file:// and old browsers
+    const helper = document.createElement('textarea');
+    helper.value = text;
+    helper.setAttribute('readonly', '');
+    helper.style.position = 'fixed';
+    helper.style.top = '-1000px';
+    document.body.appendChild(helper);
+    helper.select();
+    let copied = false;
+    try {
+      copied = document.execCommand('copy');
+    } catch (fallbackErr) {
+      copied = false;
+    }
+    helper.remove();
+    return copied;
+  }
+}
+
+function selectPromptText() {
+  const range = document.createRange();
+  range.selectNodeContents(modalContent);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+copyBtn.addEventListener('click', async () => {
+  const copied = await copyToClipboard(modalContent.textContent);
+  clearTimeout(copyResetTimer);
+  copyBtn.textContent = copied ? 'Copied' : 'Selected — press Ctrl+C';
+  copyBtn.classList.toggle('copied', copied);
+  copyBtn.classList.toggle('failed', !copied);
+  if (!copied) selectPromptText();
+  copyResetTimer = setTimeout(resetCopyButton, 2000);
 });
+
+modal.addEventListener('click', (e) => {
+  if (e.target.closest('[data-close]')) {
+    closeModal();
+    return;
+  }
+  handleNotesClick(e);
+});
+
+modal.addEventListener('keydown', handleNotesKeydown);
+modal.addEventListener('focusout', handleNotesFocusout);
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeModal();
+});
+
+// ── Grid interactions ─────────────────────────────────────────────────────────
+
+grid.addEventListener('click', (e) => {
+  const star = e.target.closest('.star');
+  if (star) {
+    setRating(Number(star.dataset.id), Number(star.dataset.value));
+    return;
+  }
+
+  if (handleNotesClick(e)) return;
+
+  const btn = e.target.closest('.delete-btn');
+  if (btn) {
+    const id = Number(btn.dataset.id);
+    const prompts = loadPrompts().filter((p) => p.id !== id);
+    savePrompts(prompts);
+    renderPrompts();
+    if (openPromptId === id) closeModal();
+    return;
+  }
+
+  // anywhere else on the card opens the prompt for reading
+  const card = e.target.closest('.card');
+  if (card && !e.target.closest('.stars, .notes-panel, .card-footer')) {
+    openModal(Number(card.dataset.id));
+  }
+});
+
+grid.addEventListener('keydown', (e) => {
+  if (handleNotesKeydown(e)) return;
+  if (e.key === 'Enter' && e.target.classList.contains('card')) {
+    e.preventDefault();
+    openModal(Number(e.target.dataset.id));
+  }
+});
+
+grid.addEventListener('focusout', handleNotesFocusout);
 
 grid.addEventListener('mouseover', (e) => {
   const star = e.target.closest('.star');
